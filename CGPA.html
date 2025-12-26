@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ofuje CGPA Predictor + Target Grades</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- jsPDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+:root{
+  --bg:#050b12;
+  --card:#0b1725;
+  --neon:#00ffb3;
+  --danger:#ff004f;
+  --text:#e5f6ff;
+}
+
+*{box-sizing:border-box;font-family:Segoe UI, sans-serif;}
+
+body{
+  margin:0;
+  background:radial-gradient(circle at top,#081624,var(--bg));
+  color:var(--text);
+  min-height:100vh;
+  display:flex;
+  justify-content:center;
+  align-items:flex-start;
+  padding-top:20px;
+}
+
+.shake{
+  animation:shake .25s infinite;
+}
+
+@keyframes shake{
+  0%{transform:translate(0)}
+  25%{transform:translate(-8px,6px)}
+  50%{transform:translate(8px,-6px)}
+  75%{transform:translate(-6px,-8px)}
+  100%{transform:translate(6px,8px)}
+}
+
+.container{
+  width:95%;
+  max-width:1000px;
+  background:linear-gradient(145deg,#0c1e33,#07111d);
+  border-radius:20px;
+  padding:20px;
+  box-shadow:0 0 40px rgba(0,255,179,.25);
+}
+
+h1{
+  text-align:center;
+  color:var(--neon);
+}
+
+.subtitle{
+  text-align:center;
+  opacity:.7;
+  margin-bottom:20px;
+}
+
+.flex{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:20px;
+}
+
+.card{
+  background:rgba(11,23,37,.9);
+  border-radius:16px;
+  padding:15px;
+}
+
+.card h3{
+  color:var(--neon);
+  margin-top:0;
+}
+
+input,select,button{
+  width:100%;
+  padding:10px;
+  border:none;
+  border-radius:8px;
+  background:#081726;
+  color:white;
+  margin-bottom:10px;
+}
+
+button{
+  background:linear-gradient(135deg,var(--neon),#00c4ff);
+  color:#000;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+.course{
+  display:grid;
+  grid-template-columns:2fr 1fr 1fr;
+  gap:6px;
+  margin-bottom:8px;
+  position:relative;
+}
+
+.requiredGrade{
+  font-size:12px;
+  color:#ffcc00;
+  grid-column:1/-1;
+}
+
+.meter{
+  width:220px;
+  height:110px;
+  border-radius:110px 110px 0 0;
+  background:conic-gradient(var(--danger) 0deg,var(--neon) 180deg,#122 180deg);
+  position:relative;
+  overflow:hidden;
+  margin:auto;
+}
+
+.meter::after{
+  content:'';
+  position:absolute;
+  width:180px;
+  height:90px;
+  background:#07111d;
+  bottom:0;
+  left:20px;
+  border-radius:90px 90px 0 0;
+}
+
+.needle{
+  width:4px;
+  height:90px;
+  background:var(--neon);
+  position:absolute;
+  bottom:0;
+  left:50%;
+  transform-origin:bottom;
+  transform:rotate(-90deg);
+}
+
+.cgpa{
+  font-size:32px;
+  color:var(--neon);
+  text-align:center;
+  margin-top:10px;
+}
+
+.alert{
+  color:var(--danger);
+  font-weight:bold;
+  text-align:center;
+  display:none;
+  animation:blink 1s infinite;
+}
+
+canvas{
+  margin-top:20px;
+}
+@media(max-width:900px){
+  .flex{grid-template-columns:1fr;}
+}
+</style>
+</head>
+
+<body>
+<div class="container" id="app">
+<h1>⚡ Ofuje CGPA Predictor + Target Grades</h1>
+<div class="subtitle">Built for Nigerian University Students</div>
+
+<div class="flex">
+
+<div class="card" id="courseCard">
+<h3>Add Courses</h3>
+
+<div class="course">
+  <input placeholder="Course Code">
+  <input type="number" placeholder="Unit">
+  <select>
+    <option value="5">A</option>
+    <option value="4">B</option>
+    <option value="3">C</option>
+    <option value="2">D</option>
+    <option value="1">E</option>
+    <option value="0">F</option>
+  </select>
+  <div class="requiredGrade"></div>
+</div>
+
+<input id="targetCgpa" type="number" step="0.01" placeholder="Enter Target CGPA (optional)">
+<button onclick="addCourse()">➕ Add Course</button>
+<button onclick="calculate()">📊 Calculate CGPA</button>
+<button onclick="exportPDF()">📄 Export PDF</button>
+<button onclick="clearChart()">🗑️ Clear Chart</button>
+</div>
+
+<div class="card">
+<h3 style="text-align:center">CGPA Meter</h3>
+
+<div class="meter">
+  <div class="needle" id="needle"></div>
+</div>
+
+<div class="cgpa" id="cgpa">0.00</div>
+<div class="alert" id="alert">⚠ OMO! CGPA DON ENTER DANGER ZONE</div>
+
+<canvas id="cgpaChart" height="150"></canvas>
+</div>
+
+</div>
+</div>
+
+<script>
+const needle = document.getElementById("needle");
+const cgpaText = document.getElementById("cgpa");
+const alertBox = document.getElementById("alert");
+const app = document.getElementById("app");
+const courseCard = document.getElementById("courseCard");
+const targetInput = document.getElementById("targetCgpa");
+
+const dangerSound = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YRAAAA==");
+dangerSound.loop = true;
+
+const clapSound = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YRAAAA==");
+
+let dangerActive=false, clapPlayed=false, vibrationTimeout=null;
+let calcCount=0;
+let yearCount=1;
+
+let chart;
+let cgpaHistory = JSON.parse(localStorage.getItem("cgpaHistory")||"[]");
+
+function initChart(){
+  const ctx = document.getElementById("cgpaChart").getContext("2d");
+  chart = new Chart(ctx,{
+    type:'line',
+    data:{
+      labels:cgpaHistory.map((_,i)=>`Year ${yearCount} Sem ${i+1}`),
+      datasets:[
+        {label:'CGPA Trend',data:cgpaHistory,borderColor:'#00ffb3',backgroundColor:'rgba(0,255,179,0.1)',tension:0.3,fill:true,pointRadius:5,pointBackgroundColor:'#00ffb3'},
+        {label:'Target CGPA',data:Array(cgpaHistory.length).fill(null),borderColor:'#ffcc00',borderDash:[5,5],fill:false,tension:0.3,pointRadius:0}
+      ]
+    },
+    options:{scales:{y:{min:0,max:5,ticks:{stepSize:0.5}},x:{ticks:{color:'#00ffb3'}}},plugins:{legend:{labels:{color:'#00ffb3'}}}}
+  });
+}
+initChart();
+
+function addCourse(){
+  const div=document.createElement("div");
+  div.className="course";
+  div.innerHTML=`<input placeholder="Course Code"><input type="number" placeholder="Unit">
+  <select>
+    <option value="5">A</option>
+    <option value="4">B</option>
+    <option value="3">C</option>
+    <option value="2">D</option>
+    <option value="1">E</option>
+    <option value="0">F</option>
+  </select>
+  <div class="requiredGrade"></div>`;
+  courseCard.insertBefore(div,courseCard.children[1]);
+}
+
+function speakPidgin(text){
+  if(!window.speechSynthesis) return;
+  const msg = new SpeechSynthesisUtterance(text);
+  msg.rate=0.9; msg.pitch=1;
+  speechSynthesis.speak(msg);
+}
+
+function animateNeedle(from,to){
+  let current=from;
+  const step=(to-from)/50;
+  const interval=setInterval(()=>{
+    current+=step;
+    needle.style.transform=`rotate(${(current/5)*180-90}deg)`;
+    if((step>0 && current>=to)||(step<0 && current<=to)){
+      needle.style.transform=`rotate(${(to/5)*180-90}deg)`;
+      clearInterval(interval);
+    }
+  },10);
+}
+
+function calculate(){
+  const courses = document.querySelectorAll(".course");
+  if(courses.length<3){ alert("Enter at least 3 courses!"); return; }
+  let validUnits = Array.from(courses).every(c=>Number(c.children[1].value)>0);
+  if(!validUnits){ alert("All courses must have valid units!"); return; }
+
+  let units=0, points=0;
+  courses.forEach(c=>{ const u=Number(c.children[1].value); const g=Number(c.children[2].value); units+=u; points+=u*g; });
+
+  const cgpa = units ? points/units : 0;
+
+  let prevCgpa=parseFloat(cgpaText.textContent)||0;
+  animateNeedle(prevCgpa,cgpa);
+
+  cgpaText.textContent=cgpa.toFixed(2);
+
+  if(cgpa<3.0){
+    alertBox.style.display="block"; needle.style.background="var(--danger)"; clapPlayed=false;
+    if(!dangerActive){ dangerSound.play(); speakPidgin("Omo! This CGPA no good o! You need wake up!"); app.classList.add("shake");
+      if(navigator.vibrate) navigator.vibrate([400,200,400,200,400]);
+      if(vibrationTimeout) clearTimeout(vibrationTimeout);
+      vibrationTimeout=setTimeout(()=>{ if(navigator.vibrate) navigator.vibrate(0); app.classList.remove("shake"); },5000);
+      dangerActive=true;
+    }
+  } else if(cgpa>=4.5){
+    alertBox.style.display="none"; needle.style.background="var(--neon)"; dangerSound.pause(); dangerSound.currentTime=0; dangerActive=false;
+    if(!clapPlayed){ clapSound.play(); speakPidgin("Correct! You too sabi book!"); clapPlayed=true; }
+  } else{
+    alertBox.style.display="none"; needle.style.background="var(--neon)"; dangerSound.pause(); dangerSound.currentTime=0; dangerActive=false; clapPlayed=false; app.classList.remove("shake"); if(vibrationTimeout) clearTimeout(vibrationTimeout); if(navigator.vibrate) navigator.vibrate(0);
+  }
+
+  calcCount++;
+  if(calcCount>2){ cgpaHistory=[]; calcCount=1; yearCount++; if(chart){ chart.data.labels=[]; chart.data.datasets[0].data=[]; chart.data.datasets[1].data=[]; chart.update(); } }
+
+  cgpaHistory.push(Number(cgpa.toFixed(2)));
+  localStorage.setItem("cgpaHistory",JSON.stringify(cgpaHistory));
+
+  const target=parseFloat(targetInput.value);
+  let targetData=[];
+  if(target && target>cgpa){
+    targetData=cgpaHistory.map((_,i)=>i===cgpaHistory.length-1?target:null);
+    const totalUnits=Array.from(courses).reduce((sum,c)=>sum+Number(c.children[1].value),0);
+    const totalPointsRequired=target*totalUnits;
+    const currentPoints=Array.from(courses).reduce((sum,c)=>sum+Number(c.children[1].value)*Number(c.children[2].value),0);
+    const remainingPoints=totalPointsRequired-currentPoints;
+    const numCourses=courses.length;
+    const perCourseGrade=remainingPoints/numCourses;
+
+    courses.forEach(c=>{
+      const u=Number(c.children[1].value);
+      let gradeRequired=(perCourseGrade/u).toFixed(2);
+      if(gradeRequired>5) gradeRequired=5;
+      if(gradeRequired<0) gradeRequired=0;
+      c.querySelector(".requiredGrade").textContent=`🎯 Need ~${gradeRequired} per unit to reach target`;
+    });
+  } else { targetData=Array(cgpaHistory.length).fill(null); courses.forEach(c=>c.querySelector(".requiredGrade").textContent=""); }
+
+  if(chart){
+    chart.data.labels=cgpaHistory.map((_,i)=>`Year ${yearCount} Sem ${i+1}`);
+    chart.data.datasets[0].data=cgpaHistory;
+    chart.data.datasets[1].data=targetData;
+    chart.update();
+  }
+
+  localStorage.setItem("cgpa",cgpa);
+}
+
+function clearChart(){
+  if(confirm("Are you sure you want to clear the CGPA chart and history?")){
+    cgpaHistory = [];
+    calcCount = 0;
+    yearCount = 1;
+    localStorage.removeItem("cgpaHistory");
+    if(chart){
+      chart.data.labels = [];
+      chart.data.datasets[0].data = [];
+      chart.data.datasets[1].data = [];
+      chart.update();
+    }
+    cgpaText.textContent = "0.00";
+    document.querySelectorAll(".requiredGrade").forEach(el => el.textContent = "");
+    app.classList.remove("shake");
+    if(vibrationTimeout) clearTimeout(vibrationTimeout);
+    if(navigator.vibrate) navigator.vibrate(0);
+  }
+}
+
+function exportPDF(){
+  const { jsPDF }=window.jspdf;
+  const pdf=new jsPDF();
+  pdf.setFontSize(18); pdf.text("Ofuje CGPA Report",20,20);
+  pdf.setFontSize(14); pdf.text(`CGPA: ${cgpaText.textContent}`,20,40);
+  const target = targetInput.value?`Target CGPA: ${targetInput.value}`:"";
+  pdf.text(target,20,50);
+
+  let courses=document.querySelectorAll(".course");
+  let y=60;
+  courses.forEach(c=>{
+    const code=c.children[0].value||"Course";
+    const req=c.querySelector(".requiredGrade").textContent;
+    if(req){ pdf.text(`${code}: ${req}`,20,y); y+=8; }
+  });
+
+  const chartCanvas=document.getElementById("cgpaChart");
+  const chartImg=chartCanvas.toDataURL("image/png",1.0);
+  pdf.addImage(chartImg,'PNG',20,y,170,80);
+
+  pdf.save("CGPA_Report.pdf");
+}
+
+window.onload=()=>{ const saved=localStorage.getItem("cgpa"); if(saved) cgpaText.textContent=Number(saved).toFixed(2); }
+</script>
+</body>
+</html>
